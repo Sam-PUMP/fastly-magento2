@@ -19,21 +19,15 @@
 
     # Add an easy way to see whether custom Fastly VCL has been uploaded
     if ( req.http.Fastly-Debug ) {
-        set resp.http.Fastly-Magento-VCL-Uploaded = "1.2.22";
+        set resp.http.Fastly-Magento-VCL-Uploaded = "1.2.28";
     } else {
         remove resp.http.Fastly-Module-Enabled;
+        remove resp.http.fastly-page-cacheable;
     }
+
     # debug info
-    if (resp.http.X-Magento-Debug) {
-        if (obj.hits > 0) {
-            set resp.http.X-Magento-Cache-Debug = "HIT";
-            set resp.http.X-Magento-Cache-Hits = obj.hits;
-        } else {
-            set resp.http.X-Magento-Cache-Debug = "MISS";
-        }
-    } else {
+    if (!resp.http.X-Magento-Debug) {
         # remove Varnish/proxy header
-        remove resp.http.Age;
         remove resp.http.X-Magento-Debug;
         remove resp.http.X-Magento-Tags;
         remove resp.http.X-Magento-Cache-Control;

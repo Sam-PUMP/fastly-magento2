@@ -374,6 +374,21 @@ class Api
     }
 
     /**
+     * Deleting an individual regular VCL Snippet
+     *
+     * @param $version
+     * @param $name
+     * @return bool|mixed
+     */
+    public function removeSnippet($version, $name)
+    {
+        $url = $this->_getApiServiceUri(). 'version/'. $version. '/snippet/' . $name;
+        $result = $this->_fetch($url, \Zend_Http_Client::DELETE);
+
+        return $result;
+    }
+
+    /**
      * Creates a new condition
      *
      * @param $version
@@ -589,9 +604,43 @@ class Api
         return $result;
     }
 
+    /**
+     * Delete named dictionary for a particular service and version.
+     *
+     * @param $version
+     * @param $name
+     * @return bool|mixed
+     */
+    public function deleteDictionary($version, $name)
+    {
+        $url = $this->_getApiServiceUri(). 'version/'. $version . '/dictionary/' . $name;
+        $result = $this->_fetch($url, \Zend_Http_Client::DELETE);
+
+        return $result;
+    }
+
+    /**
+     * Get dictionary item list
+     *
+     * @param $dictionaryId
+     * @return bool|mixed
+     */
     public function dictionaryItemsList($dictionaryId)
     {
         $url = $this->_getApiServiceUri(). 'dictionary/'.$dictionaryId.'/items';
+        $result = $this->_fetch($url, \Zend_Http_Client::GET);
+
+        return $result;
+    }
+
+    /**
+     * Fetches dictionary by name
+     *
+     * @param $dictionaryName
+     * @return bool|mixed
+     */
+    public function getSingleDictionary($version, $dictionaryName) {
+        $url = $this->_getApiServiceUri(). 'version/'. $version . '/dictionary/' . $dictionaryName;
         $result = $this->_fetch($url, \Zend_Http_Client::GET);
 
         return $result;
@@ -747,64 +796,70 @@ class Api
     /**
      * @param $uri
      * @param string $method
-     * @param string $body
+     * @param mixed[]|string $body
      * @param bool $test
      * @param $testApiKey
      * @return bool|mixed
      */
     protected function _fetch($uri, $method = \Zend_Http_Client::GET, $body = '', $test = false, $testApiKey = null)
     {
+        $apiKey = ($test == true) ? $testApiKey : $this->config->getApiKey();
 
-        if($test) {
-            $apiKey = $testApiKey;
-        } else {
-            $apiKey = $this->config->getApiKey();
+        // Corectly format $body string
+        if (is_array($body) == true) {
+            $body = http_build_query($body);
         }
 
-        // set headers
+        // Client headers
         $headers = [
             self::FASTLY_HEADER_AUTH  . ': ' . $apiKey,
             'Accept: application/json'
         ];
 
-        if($method == \Zend_Http_Client::PUT) {
-            array_push($headers, 'Content-Type: application/x-www-form-urlencoded');
+        // Client options
+        $options = [];
+
+        // Request method specific header & option changes
+        switch ($method) {
+            case \Zend_Http_Client::DELETE:
+                $options[CURLOPT_CUSTOMREQUEST] = \Zend_Http_Client::DELETE;
+                break;
+            case \Zend_Http_Client::PUT:
+                $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+                $options[CURLOPT_CUSTOMREQUEST] = \Zend_Http_Client::PUT;
+
+                if ($body != '') {
+                    $options[CURLOPT_POSTFIELDS] = $body;
+                }
+
+                break;
+            case \Zend_Http_Client::PATCH:
+                $options[CURLOPT_CUSTOMREQUEST] = \Zend_Http_Client::PATCH;
+                $headers[] = 'Content-Type: text/json';
+
+                if ($body != '') {
+                    $options[CURLOPT_POSTFIELDS] = $body;
+                }
+
+                break;
         }
 
-        if($method == \Zend_Http_Client::PATCH) {
-            array_push($headers, 'Content-Type: text/json');
-        }
+        /** @var \Magento\Framework\HTTP\Adapter\Curl $client */
+        $client = $this->curlFactory->create();
 
-        try {
-            $client = $this->curlFactory->create();
-            if($method == \Zend_Http_Client::PUT) {
-                $client->addOption(CURLOPT_CUSTOMREQUEST, 'PUT');
-                if($body != '')
-                {
-                    $client->addOption(CURLOPT_POSTFIELDS, http_build_query($body));
-                }
-            } elseif($method == \Zend_Http_Client::DELETE) {
-                $client->addOption(CURLOPT_CUSTOMREQUEST, 'DELETE');
-            } elseif($method == \Zend_Http_Client::PATCH) {
-                $client->addOption(CURLOPT_CUSTOMREQUEST, 'PATCH');
-                if($body != '')
-                {
-                    $client->addOption(CURLOPT_POSTFIELDS, $body);
-                }
-            }
-            $client->write($method, $uri, '1.1', $headers, $body);
-            $response = $client->read();
-            $responseBody = \Zend_Http_Response::extractBody($response);
-            $responseCode = \Zend_Http_Response::extractCode($response);
-            $client->close();
+        // Execute request
+        $client->setOptions($options);
+        $client->write($method, $uri, '1.1', $headers, $body);
+        $response = $client->read();
+        $client->close();
 
-            // check response
-            if ($responseCode != '200') {
-                throw new \Exception('Return status ' . $responseCode);
-            }
+        // Parse response
+        $responseBody = \Zend_Http_Response::extractBody($response);
+        $responseCode = \Zend_Http_Response::extractCode($response);
 
-        } catch (\Exception $e) {
-            $this->logger->critical($e->getMessage(), $uri);
+        // Return error based on response code
+        if ($responseCode != '200') {
+            $this->logger->critical('Return status ' . $responseCode, $uri);
             return false;
         }
 

@@ -8,15 +8,15 @@
 
         /* deliver stale if the object is available */
         if (stale.exists) {
-        return(deliver_stale);
+            return(deliver_stale);
         }
 
         if (req.restarts < 1 && (req.request == "GET" || req.request == "HEAD")) {
-        restart;
+            restart;
         }
 
         /* else go to vcl_error to deliver a synthetic */
-        error 503;
+        error beresp.status beresp.response;
     }
 
     # Remove Set-Cookies from responses for static content
@@ -31,19 +31,15 @@
 
     }
 
-    if (req.restarts > 0 ) {
-        set beresp.http.Fastly-Restarts = req.restarts;
-    }
-
     if (beresp.http.Content-Type ~ "text/(html|xml)") {
         # enable ESI feature for Magento response by default
         esi;
         if (!beresp.http.Vary ~ "X-Magento-Vary,Https") {
             if (beresp.http.Vary) {
-                    set beresp.http.Vary = beresp.http.Vary ",X-Magento-Vary,Https";
-                } else {
-                    set beresp.http.Vary = "X-Magento-Vary,Https";
-                }
+                set beresp.http.Vary = beresp.http.Vary ",X-Magento-Vary,Https";
+            } else {
+                set beresp.http.Vary = "X-Magento-Vary,Https";
+            }
         }
         # Since varnish doesn't compress ESIs we need to hint to the HTTP/2 terminators to
         # compress it
@@ -65,30 +61,34 @@
         }
     }
 
-    if (beresp.http.Cache-Control ~ "private") {
+    if (beresp.http.Cache-Control ~ "private|no-cache|no-store") {
         set req.http.Fastly-Cachetype = "PRIVATE";
         return (pass);
-    }
-
-    # cache only successfully responses and 404s
-    if ( !http_status_matches(beresp.status, "200,301,404")) {
-        set req.http.Fastly-Cachetype = "ERROR";
-        set beresp.ttl = 1s;
-        set beresp.grace = 5s;
-        return (deliver);
     }
 
     if (beresp.http.X-Magento-Debug) {
         set beresp.http.X-Magento-Cache-Control = beresp.http.Cache-Control;
     }
 
+    # Never cache 302s
+    if (beresp.status == 302) {
+        return (pass);
+    }
+
+    # Just in case the Request Setting for x-pass is missing
+    if (req.http.x-pass) {
+        return (pass);
+    }
+
+    # Varnish sets default TTL if none of these are present
+    if (!beresp.http.Expires && !beresp.http.Surrogate-Control ~ "max-age" && !beresp.http.Cache-Control ~ "(s-maxage|max-age)") {
+        set beresp.ttl = 0s;
+    }
+
     # validate if we need to cache it and prevent from setting cookie
     # images, css and js are cacheable by default so we have to remove cookie also
     if (beresp.ttl > 0s && (req.request == "GET" || req.request == "HEAD") && !req.http.x-pass ) {
         unset beresp.http.set-cookie;
-        if (req.url !~ "^/(pub/)?(media|static)/.*") {
-            set beresp.grace = 86400m;
-        }
 
         # init surrogate keys
         if (beresp.http.X-Magento-Tags) {
@@ -97,13 +97,9 @@
             set beresp.http.Surrogate-Key = "text";
         }
 
-        # set surrogate keys by content type
-        if (beresp.http.Content-Type ~ "image") {
-            set beresp.http.Surrogate-Key = "image";
-        } elsif (beresp.http.Content-Type ~ "script") {
-            set beresp.http.Surrogate-Key = "script";
-        } elsif (beresp.http.Content-Type ~ "css") {
-            set beresp.http.Surrogate-Key = "css";
+        # set surrogate keys by content type if they are image/script or CSS
+        if (beresp.http.Content-Type ~ "(image|script|css)") {
+            set beresp.http.Surrogate-Key = re.group.1;
         }
         return (deliver);
     }

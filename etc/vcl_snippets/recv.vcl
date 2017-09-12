@@ -4,9 +4,7 @@
         set req.url = re.group.2;
     }
 
-    # Sort the query arguments
-    set req.url = boltsort.sort(req.url);
-
+    # Rewrite /static/versionxxxxx URLs. Avoids us having to rewrite on nginx layer
     if (req.url ~ "^/static/version(\d*/)?(.*)$") {
        set req.url = "/static/" + re.group.2 + "?" + re.group.1;
     }
@@ -58,11 +56,11 @@
     # geoip lookup
     if (req.url ~ "fastlyCdn/geoip/getaction/") {
         # check if GeoIP has been already processed by client. this normally happens before essential cookies are set.
-        if (req.http.cookie ~ "(X-Magento-Vary|form_key)=") {
+        if (req.http.cookie:X-Magento-Vary || req.http.cookie:form_key) {
             error 200 "";
         } else {
             # append parameter with country code only if it doesn't exist already
-            if ( req.url !~ "country_code=" ) {
+            if ( req.url.qs !~ "country_code=" ) {
                 set req.url = req.url "?country_code=" if ( req.http.geo_override, req.http.geo_override, client.geo.country_code);
             }
         }
@@ -72,12 +70,25 @@
         set req.http.Magento-Original-URL = req.url;
         set req.url = querystring.regfilter(req.url, "^(utm_.*|gclid|gdftrk|_ga|mc_.*)");
     }
+
+    # Don't allow clients to force a pass
+    if (req.restarts == 0) {
+        unset req.http.x-pass;
+    }
     
     # Pass on checkout URLs. Because it's a snippet we want to execute this after backend selection so we handle it
     # in the request condition
     if (req.url ~ "/(catalogsearch|checkout)") {
         set req.http.x-pass = "1";
+    # Pass all admin actions
+    } else if ( req.url ~ "^/(index\.php/)?admin(_.*)?/" ) {
+        set req.http.x-pass = "1";
+    } else {
+        # Sort the query arguments to increase cache hit ratio with query arguments that
+        # may be out od order
+        set req.url = boltsort.sort(req.url);
     }
+
 
     # static files are always cacheable. remove SSL flag and cookie
     if (req.url ~ "^/(pub/)?(media|static)/.*") {

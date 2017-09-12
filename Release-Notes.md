@@ -1,5 +1,36 @@
 # Fastly_Cdn Release Notes
 
+## 1.2.28
+
+- Fix for missing observers. Relates to MAGETWO-70616 issue
+
+## 1.2.27
+
+- Error/maintenance page was returning 503 OK when returning a response. This has now been change 
+  503 Service Temporarily Unavailable
+- Magento 2.2 changes HTTP API which break PUT requests. This release contains fix for 2.2
+
+## 1.2.26
+
+- VCL clean up. Remove unused structures. Add few more guardrails
+
+## 1.2.25
+
+- Add fastly-page-cacheable debug header to indicate whether a page is cacheable. Helpful to determine if a particular
+  block in the page has been marked uncacheable
+
+## 1.2.24
+
+- Fix for a bug where 302 may be deemed an unsuccessful code resulting in caching of cookies
+
+## 1.2.23
+
+- Add Basic Authentication functionality - ability to protect your site during maintenance or development
+
+## 1.2.21
+
+- Add Edge ACLs management interface directly into the Magento Plugin admin
+
 ## 1.2.20
 
 - Add Historical bandwidth/request/error stats to the Magento Dashboard
